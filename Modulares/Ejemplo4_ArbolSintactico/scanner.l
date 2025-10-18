@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "ast.h"           /* Ensure Node is declared before parser.tab.h */
 #include "parser.tab.h"
 extern char *yytext;
 %}
