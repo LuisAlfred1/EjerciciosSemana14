@@ -3,8 +3,15 @@ project(DeteccionErroresMod C)
 set(CMAKE_C_STANDARD 11)
 find_package(BISON REQUIRED)
 find_package(FLEX REQUIRED)
-BISON_TARGET(Parser parser.y ${CMAKE_CURRENT_BINARY_DIR}/parser.c COMPILE_FLAGS "-d -v")
+BISON_TARGET(Parser parser.y ${CMAKE_CURRENT_BINARY_DIR}/parser.tab.c
+        DEFINES_FILE ${CMAKE_CURRENT_BINARY_DIR}/parser.tab.h
+)
 FLEX_TARGET(Scanner scanner.l ${CMAKE_CURRENT_BINARY_DIR}/scanner.c)
 ADD_FLEX_BISON_DEPENDENCY(Scanner Parser)
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
-add_executable(parser_errors ${BISON_Parser_OUTPUTS} ${FLEX_Scanner_OUTPUTS} main.c)
+
+add_executable(parser_errors
+        ${BISON_Parser_OUTPUTS}
+        ${FLEX_Scanner_OUTPUTS}
+        main.c
+)
