@@ -1,0 +1,180 @@
+---------------------------  main.c --------------------------------
+
+#include <stdio.h>                         /* Incluye la biblioteca estándar de entrada/salida para usar printf, puts, etc. */
+
+/* Declaración adelantada (forward declaration) de la función yyparse.
+   Esta función es generada automáticamente por Bison a partir de parser.y
+   y será la encargada de consumir los tokens provenientes del scanner (Flex)
+   y evaluar/reconocer las expresiones según la gramática. */
+int yyparse(void);
+
+int main(void) {
+    /* Configura stdout y stderr sin buffer (o con buffer por línea, según el sistema).
+       Esto ayuda a que los mensajes se impriman inmediatamente en consola,
+       evitando que queden "esperando" en el buffer, lo que es útil en programas interactivos.
+       Nota: No se modifica stdin para no interferir con la lectura del analizador. */
+    setvbuf(stdout, NULL, _IONBF, 0);
+    setvbuf(stderr, NULL, _IONBF, 0);
+
+    /* Mensajes de ayuda al usuario sobre el formato de entrada esperado. */
+    puts("Ingrese expresiones aritmeticas terminadas con ;");
+    puts("Soporta enteros, + - * /, parentesis y menos unario. Ejemplos:");
+    puts("  1+2*3;         -> 7");
+    puts("  (5-2)*10;      -> 30");
+    puts("  -8 + (3*4);    -> 4");
+    puts("Finalice con: Ctrl+Z y Enter (Windows).");
+
+    /* Prompt para indicar que el programa espera entrada del usuario. */
+    printf("Ingrese entrada => ");
+    fflush(stdout);                        /* Asegura que el prompt se muestre de inmediato. */
+
+    /* Llama al analizador sintáctico (yyparse), que:
+       - Pedirá tokens al scanner (yylex) según sea necesario.
+       - Aplicará las reglas de la gramática.
+       - Ejecutará las acciones semánticas (cálculos, impresiones, manejo de errores).
+       El valor de retorno de yyparse se propaga como código de salida del programa. */
+    return yyparse();
+}
+
+
+---------------------------  parser.y  -----------------------------
+
+%{
+    /* Sección de código C insertado en el archivo generado por Bison.
+       Aquí se incluyen cabeceras y prototipos necesarios para que el parser
+       conozca yylex (scanner) y yyerror (manejador de errores). */
+    #include <stdio.h>
+
+    int yylex(void);                 /* Función producida por Flex (scanner) que entrega tokens. */
+    void yyerror(const char* s);     /* Función de reporte de errores sintácticos/semánticos. */
+%}
+
+/* Define que el tipo del valor semántico (yylval y $$, $1, etc.) será int para todas las reglas.
+   Esto simplifica el manejo porque estamos evaluando expresiones aritméticas enteras. */
+%define api.value.type {int}
+
+/* Solicita a Bison que genere un analizador LR(1) canónico (más explícito en los conjuntos de items).
+   Útil para diagnósticos y asegurar manejo determinista de lookahead en este ejemplo. */
+%define lr.type canonical-lr
+
+/* Declaración de tokens que el scanner (Flex) puede devolver.
+   NUM representa números enteros; SEMI representa ';'. */
+%token NUM
+%token SEMI
+
+/* Declaración de precedencia y asociatividad para resolver ambigüedades en la gramática.
+   - '+' y '-' son operadores binarios de menor precedencia que '*' y '/'.
+   - Todos los binarios aquí son asociativos a la izquierda.
+   - UMINUS es un token de precedencia ficticia para el menos unario y se declara con %right
+     para control fino de su precedencia respecto a los binarios. */
+%left '+' '-'
+%left '*' '/'
+%right UMINUS
+
+%%  /* Inicio de las reglas gramaticales y acciones */
+
+/* No terminal de entrada principal.
+   Permite cero o más statements (cada uno termina en ';').
+   Es común en Bison usar una regla 'input' que acumula líneas o sentencias. */
+input
+    : /* vacío */                  /* Entrada vacía es válida (por ejemplo, EOF inmediato). */
+    | input stmt                   /* Recursión izquierda: consume un statement y sigue. */
+    ;
+
+/* Un statement corresponde a una expresión seguida de ';' o a un intento fallido recuperado. */
+stmt
+    : expr SEMI                    /* Caso exitoso: se evaluó 'expr' y se imprime el resultado. */
+        {
+            printf("Resultado = %d\n", $1);           /* $1 es el valor calculado de 'expr'. */
+            printf("Ingrese otra entrada => ");       /* Prompt para la siguiente expresión. */
+            fflush(stdout);                           /* Asegura que el prompt se muestre ya. */
+        }
+    | error SEMI                   /* Recuperación de errores: descarta hasta el siguiente ';'. */
+        {
+            printf("Recuperado tras error hasta ';'\n");
+            fflush(stdout);
+            yyerrok;                                   /* Limpia el estado de error para seguir. */
+        }
+    ;
+
+/* Gramática de expresiones aritméticas con evaluación directa en las acciones. */
+expr
+    : NUM                           /* Un número es una expresión; su valor es el propio número. */
+    | expr '+' expr                 /* Suma binaria, asociativa a la izquierda por %left. */
+        { $$ = $1 + $3; }           /* $$ es el valor de la subexpresión actual. */
+    | expr '-' expr                 /* Resta binaria. */
+        { $$ = $1 - $3; }
+    | expr '*' expr                 /* Multiplicación binaria. */
+        { $$ = $1 * $3; }
+    | expr '/' expr                 /* División entera con chequeo de división por cero. */
+        {
+            if ($3 == 0) {
+                yyerror("division por cero"); /* Reporte de error semántico. */
+                $$ = 0;                       /* Valor neutral para continuar. */
+            } else {
+                $$ = $1 / $3;
+            }
+        }
+    | '(' expr ')'                  /* Paréntesis: altera la precedencia, devuelve el valor interno. */
+        { $$ = $2; }
+    | '-' expr %prec UMINUS         /* Menos unario; %prec eleva su precedencia a la de UMINUS. */
+        { $$ = -$2; }
+    ;
+%%  /* Fin de las reglas; comienza el código C de apoyo */
+
+/* Función de manejo de errores llamada por Bison cuando detecta un problema de parseo.
+   's' contiene un mensaje genérico (por ejemplo, "syntax error"), al que aquí
+   podemos añadir contexto si fuera necesario. */
+void yyerror(const char* s) {
+    fprintf(stderr, "Error de parseo: %s\n", s);
+}
+
+
+---------------------------  scanner.l  ----------------------------
+
+%option noyywrap        /* Indica que no se usará la función yywrap al finalizar la entrada. */
+%option nounput         /* Desactiva la función unput (no se requiere para este scanner). */
+%option noinput         /* Desactiva la función input (Flex gestionará la lectura por defecto). */
+%option interactive     /* Optimiza el scanner para entrada interactiva (caracteres llegan de a poco). */
+
+%{
+#include <stdlib.h>     /* Para strtol: conversión de cadena a entero con control de base y errores. */
+#include "parser.tab.h" /* Cabecera generada por Bison que declara tokens (NUM, SEMI, etc.) y yylval. */
+%}
+
+/* Zona de reglas: cada patrón (regex) a la izquierda se asocia con una acción en C a la derecha. */
+%%
+[0-9]+         {
+                   /* Coincide una o más cifras decimales.
+                      Convertimos yytext (lexema capturado) a int y lo colocamos en yylval,
+                      que es el valor semántico que Bison usará en las acciones de la gramática. */
+                   yylval = (int)strtol(yytext, NULL, 10);
+                   return NUM; /* Devuelve el token NUM al parser. */
+               }
+
+[;]            {
+                   /* Coincide el punto y coma que delimita el final de una expresión/statement. */
+                   return SEMI;
+               }
+
+[-+*/()]       {
+                   /* Coincide operadores y paréntesis individuales.
+                      Devolvemos directamente el carácter como token (por su código ASCII),
+                      lo cual es una práctica común cuando la gramática en Bison usa los literales
+                      '+', '-', '*', '/', '(', ')'. */
+                   return (int)yytext[0];
+               }
+
+[ \t\r\n]+     {
+                   /* Ignora espacios, tabulaciones y saltos de línea (incluye CRLF en Windows).
+                      No se devuelve ningún token: se "come" el whitespace. */
+               }
+
+.              {
+                   /* Cualquier otro carácter no reconocido se reporta como error léxico.
+                      No se devuelve token, se continúa para permitir recuperación. */
+                   fprintf(stderr, "Caracter desconocido: '%c'\n", yytext[0]);
+               }
+%%
+
+/* Fin del archivo del scanner (no se requiere código adicional aquí). */
