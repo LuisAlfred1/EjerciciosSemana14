@@ -33,7 +33,7 @@ void printTree(Node* n, int indent){
 %start input
 %%
 input:
-  /* empty */ { printf("Reduce: input -> ε\n"); }
+  /* empty */ { printf("Ingresa expresion: "); }
 | input line  { printf("Reduce: input -> input line\n"); }
 ;
 line: expr ';' { int val = eval($1); printf("Linea completa -> resultado: %d\n", val); printf("Linea completa -> imprimir AST:\n"); printTree($1,0); }
